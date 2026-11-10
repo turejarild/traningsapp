@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101713">
+  <title>Träningsappen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#" data-page="home"><span class="brand-mark">T</span><span>TRÄNING<span class="brand-muted">SAPP</span></span></a>
+      <div class="side-label">MENY</div>
+      <nav class="side-nav" aria-label="Huvudmeny">
+        <button class="nav-item active" data-page="home"><span>⌂</span> Hem</button>
+        <button class="nav-item" data-page="planning"><span>▦</span> Planering</button>
+        <button class="nav-item" data-page="workout"><span>＋</span> Träna</button>
+        <button class="nav-item" data-page="stats"><span>⌁</span> Statistik</button>
+        <button class="nav-item" data-page="history"><span>▤</span> Historik</button>
+        <button class="nav-item" data-page="exercises"><span>◈</span> Övningar</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="profile-dot">T</div>
+        <div><strong>Min träning</strong><small>Personlig träningslogg</small></div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="mobile-brand"><span class="brand-mark">T</span> TRÄNINGSAPP</div>
+        <div class="topbar-spacer"></div>
+        <span class="live-dot"></span><span class="topbar-caption">Din träningsöversikt</span>
+      </header>
+      <div id="app" class="page-content" aria-live="polite"></div>
+    </main>
+  </div>
+
+  <nav class="mobile-nav" aria-label="Mobilmeny">
+    <button class="active" data-page="home"><span>⌂</span><small>Hem</small></button>
+    <button data-page="planning"><span>▦</span><small>Planera</small></button>
+    <button data-page="workout"><span>＋</span><small>Träna</small></button>
+    <button data-page="stats"><span>⌁</span><small>Statistik</small></button>
+    <button data-page="history"><span>▤</span><small>Historik</small></button>
+  </nav>
+
+  <dialog id="modal" class="modal">
+    <form method="dialog" class="modal-card" id="modal-form">
+      <button class="modal-close" value="cancel" aria-label="Stäng">×</button>
+      <div id="modal-content"></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status"></div>
+
+  <!-- Firebase är förberett. Lägg in projektets webbkonfiguration i app.js när Firebase-projektet är skapat. -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
