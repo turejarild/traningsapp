@@ -11,7 +11,17 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app-shell">
+  <section id="auth-screen" class="auth-screen">
+  <form id="login-form" class="auth-card">
+    <div class="brand-mark">T</div><div class="eyebrow">PERSONLIG TRÄNINGSLOGG</div>
+    <h1>Logga in</h1><p class="subtitle">Använd ditt konto som du skapade i Firebase Authentication.</p>
+    <div class="field"><label for="login-email">E-POST</label><input id="login-email" class="input" type="email" autocomplete="username" required></div>
+    <div class="field"><label for="login-password">LÖSENORD</label><input id="login-password" class="input" type="password" autocomplete="current-password" required></div>
+    <p id="auth-error" class="auth-error" role="alert"></p>
+    <button id="login-button" class="btn btn-primary" type="submit">Logga in</button>
+  </form>
+</section>
+<div class="app-shell" id="app-shell" hidden>
     <aside class="sidebar">
       <a class="brand" href="#" data-page="home"><span class="brand-mark">T</span><span>TRÄNING<span class="brand-muted">SAPP</span></span></a>
       <div class="side-label">MENY</div>
@@ -33,13 +43,13 @@
       <header class="topbar">
         <div class="mobile-brand"><span class="brand-mark">T</span> TRÄNINGSAPP</div>
         <div class="topbar-spacer"></div>
-        <span class="live-dot"></span><span class="topbar-caption">Din träningsöversikt</span>
+        <span class="live-dot"></span><span class="topbar-caption" id="sync-status">Ansluter…</span><button class="btn btn-small btn-ghost" id="logout-button" type="button">Logga ut</button>
       </header>
       <div id="app" class="page-content" aria-live="polite"></div>
     </main>
   </div>
 
-  <nav class="mobile-nav" aria-label="Mobilmeny">
+  <nav class="mobile-nav" id="mobile-nav" aria-label="Mobilmeny" hidden>
     <button class="active" data-page="home"><span>⌂</span><small>Hem</small></button>
     <button data-page="planning"><span>▦</span><small>Planera</small></button>
     <button data-page="workout"><span>＋</span><small>Träna</small></button>
@@ -55,7 +65,7 @@
   </dialog>
   <div id="toast" class="toast" role="status"></div>
 
-  <!-- Firebase är förberett. Lägg in projektets webbkonfiguration i app.js när Firebase-projektet är skapat. -->
+  <!-- Firebase Authentication + Firestore används. -->
   <script type="module" src="app.js"></script>
 </body>
 </html>

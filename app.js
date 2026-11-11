@@ -1,23 +1,17 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-/*
-  FIREBASE:
-  1. Skapa ett Firebase-projekt.
-  2. Aktivera Authentication > Anonymous.
-  3. Skapa Firestore Database.
-  4. Klistra in webbkonfigurationen nedan.
-  Utan konfiguration används webbläsarens localStorage för testning.
-*/
 const firebaseConfig = {
-  apiKey: "DIN_API_KEY",
-  authDomain: "DITT_PROJEKT.firebaseapp.com",
-  projectId: "DITT_PROJEKT",
-  storageBucket: "DITT_PROJEKT.appspot.com",
-  messagingSenderId: "DITT_SENDER_ID",
-  appId: "DITT_APP_ID"
+  apiKey: "AIzaSyDTASGWCKIDAuzC43zjmNKYoQ8D7W4TuAg",
+  authDomain: "traningsapp-7fc08.firebaseapp.com",
+  projectId: "traningsapp-7fc08",
+  storageBucket: "traningsapp-7fc08.firebasestorage.app",
+  messagingSenderId: "644228580496",
+  appId: "1:644228580496:web:30f3f609ebdb52cfc9c415",
+  measurementId: "G-EWZWTT3F9W"
 };
+const ALLOWED_UID = "DbhVom4QA5VBpS32HRQLkmqmI5V2";
 
 const TYPES = [
   ["Gym","#69a9ff"],["Innebandy","#55d68b"],["Kondition","#f4a261"],
@@ -29,8 +23,8 @@ const appRoot = document.querySelector("#app");
 const modal = document.querySelector("#modal");
 const modalContent = document.querySelector("#modal-content");
 let page = "home", selectedDate = new Date(), selectedDay = null, activeSession = null;
-let sessions = [], exercises = [], plans = [], firebase = null, db = null, auth = null, cloudReady = false;
-const todayISO = () => new Date().toISOString().slice(0,10);
+let sessions = [], exercises = [], plans = [], firebase = null, db = null, auth = null, cloudReady = false, currentUser = null;
+const todayISO = () => {const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;};
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+Math.random());
 const typeColor = name => TYPES.find(t=>t[0]===name)?.[1] || "#9aa3a0";
 const esc = s => String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -49,39 +43,88 @@ function saveLocal(){
   localStorage.setItem("training_exercises",JSON.stringify(exercises));
   localStorage.setItem("training_plans",JSON.stringify(plans));
 }
+const cloudCollection = kind => collection(db, "users", currentUser.uid, kind);
+const cloudDocument = (kind,id) => doc(db, "users", currentUser.uid, kind, id);
+const localKey = kind => ({sessions:"training_sessions",exercises:"training_exercises",plans:"training_plans"})[kind];
+
 async function initCloud(){
-  const configured = firebaseConfig.apiKey !== "DIN_API_KEY" && firebaseConfig.projectId !== "DITT_PROJEKT";
-  if(!configured) return;
-  try{
-    firebase = initializeApp(firebaseConfig); auth = getAuth(firebase); db = getFirestore(firebase);
-    await new Promise((resolve,reject)=>{
-      const unsub = onAuthStateChanged(auth, async user=>{
-        unsub();
-        try{ if(!user) await signInAnonymously(auth); resolve(); }catch(e){reject(e);}
-      });
-    });
-    cloudReady = true;
-    const [s,e,p] = await Promise.all([
-      getDocs(collection(db,"sessions")),getDocs(collection(db,"exercises")),getDocs(collection(db,"plans"))
-    ]);
-    sessions=s.docs.map(d=>({id:d.id,...d.data()}));
-    exercises=e.docs.map(d=>({id:d.id,...d.data()}));
-    plans=p.docs.map(d=>({id:d.id,...d.data()}));
-    saveLocal();
-  }catch(err){console.error("Firebase kunde inte ansluta:",err);loadLocal();toast("Kunde inte ansluta till Firebase – lokal testdata används.");}
+  firebase = initializeApp(firebaseConfig);
+  auth = getAuth(firebase);
+  db = getFirestore(firebase);
+  onAuthStateChanged(auth, async user => {
+    cloudReady = false;
+    currentUser = user?.uid === ALLOWED_UID ? user : null;
+    document.querySelector("#auth-screen").hidden = !!currentUser;
+    document.querySelector("#app-shell").hidden = !currentUser;
+    document.querySelector("#mobile-nav").hidden = !currentUser;
+    if (user && !currentUser) {
+      await signOut(auth);
+      showAuthError("Det här kontot har inte behörighet till appen.");
+      return;
+    }
+    if (!currentUser) return;
+    document.querySelector("#sync-status").textContent = "Synkroniserar…";
+    try {
+      const [s,e,p] = await Promise.all(["sessions","exercises","plans"].map(kind=>getDocs(cloudCollection(kind))));
+      const snapshots = {sessions:s,exercises:e,plans:p};
+      const local = {sessions:[...sessions],exercises:[...exercises],plans:[...plans]};
+      // Existing cloud data takes priority. Import only local IDs absent from cloud.
+      const merged = {};
+      for(const kind of ["sessions","exercises","plans"]){
+        const cloudItems=snapshots[kind].docs.map(d=>({...d.data(),id:d.id}));
+        const ids=new Set(cloudItems.map(x=>x.id));
+        const missing=local[kind].filter(x=>x.id && !ids.has(x.id));
+        for(const item of missing){
+          await setDoc(cloudDocument(kind,item.id),item);
+          ids.add(item.id);
+        }
+        merged[kind]=[...cloudItems,...missing];
+      }
+      sessions=merged.sessions;exercises=merged.exercises;plans=merged.plans;
+      cloudReady=true;
+      saveLocal();
+      document.querySelector("#sync-status").textContent = "Synkroniserad";
+      render();
+    }catch(err){
+      console.error("Firestore sync failed",err);
+      document.querySelector("#sync-status").textContent = "Synkfel";
+      showAuthError("Inloggningen fungerade men data kunde inte hämtas. Kontrollera Firestore-regler och nätverk.");
+      document.querySelector("#app-shell").hidden=true;
+      document.querySelector("#mobile-nav").hidden=true;
+      document.querySelector("#auth-screen").hidden=false;
+    }
+  });
 }
 async function persist(kind,item){
-  if(cloudReady){
-    try{
-      const col=collection(db,kind);
-      if(item.id && !item.id.startsWith("local-")) await updateDoc(doc(db,kind,item.id),item);
-      else {const data={...item};delete data.id;const ref=await addDoc(col,data);item.id=ref.id;}
-    }catch(e){console.error(e);toast("Molnsparning misslyckades. Kontrollera Firebase.");}
-  }
-  saveLocal();
+  if(!currentUser || !cloudReady){toast("Inte ansluten till molnet. Försök igen senare.");return false;}
+  try{
+    await setDoc(cloudDocument(kind,item.id),item);
+    saveLocal();
+    return true;
+  }catch(err){console.error(err);toast("Kunde inte spara i Firebase. Försök igen.");return false;}
 }
+async function removeCloud(kind,id){
+  if(!currentUser || !cloudReady){toast("Inte ansluten till molnet.");return false;}
+  try{await deleteDoc(cloudDocument(kind,id));saveLocal();return true;}
+  catch(err){console.error(err);toast("Kunde inte ta bort i Firebase.");return false;}
+}
+function showAuthError(message){document.querySelector("#auth-error").textContent=message;}
+document.querySelector("#login-form").addEventListener("submit",async e=>{
+  e.preventDefault();showAuthError("");
+  const btn=document.querySelector("#login-button");btn.disabled=true;btn.textContent="Loggar in…";
+  try{
+    await signInWithEmailAndPassword(auth,document.querySelector("#login-email").value.trim(),document.querySelector("#login-password").value);
+    document.querySelector("#login-password").value="";
+  }catch(err){console.error(err);showAuthError("Inloggningen misslyckades. Kontrollera e-post och lösenord.");}
+  finally{btn.disabled=false;btn.textContent="Logga in";}
+});
+document.querySelector("#logout-button").addEventListener("click",async()=>{
+  await signOut(auth);sessions=[];exercises=[];plans=[];activeSession=null;
+  // Keep local data untouched as an emergency backup.
+});
+
 function toast(message){const el=document.querySelector("#toast");el.textContent=message;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2600);}
-function setPage(next){page=next;document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===next));render();}
+function setPage(next){if(page==="workout" && activeSession && next!=="workout")collectSessionInputs();page=next;document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===next));render();}
 function openModal(html){modalContent.innerHTML=html;modal.showModal();}
 function closeModal(){modal.close();}
 document.addEventListener("click",e=>{
@@ -162,10 +205,10 @@ function handleAction(action,id){
   if(action==="new-plan") showPlanForm();
   if(action==="start-empty") startSession({title:"Oplanerat pass",type:"Gym",date:todayISO(),exercises:[]});
   if(action==="start-plan"){const p=plans.find(x=>x.id===id);if(p)startSession({...structuredClone(p),title:p.title,date:todayISO(),completed:false,important:false,notes:"",exertion:"",duration:0});}
-  if(action==="delete-plan"){plans=plans.filter(p=>p.id!==id);saveLocal();render();}
-  if(action==="delete-exercise"){exercises=exercises.filter(x=>x.id!==id);saveLocal();render();}
-  if(action==="add-session-exercise") showAddExercise();
-  if(action==="remove-session-exercise"){activeSession.exercises.splice(Number(id),1);renderWorkout();}
+  if(action==="delete-plan"){if(confirm("Ta bort träningsmallen?"))removeCloud("plans",id).then(ok=>{if(ok){plans=plans.filter(p=>p.id!==id);saveLocal();render();}});}
+  if(action==="delete-exercise"){if(confirm("Ta bort övningen från biblioteket?"))removeCloud("exercises",id).then(ok=>{if(ok){exercises=exercises.filter(x=>x.id!==id);saveLocal();render();}});}
+  if(action==="add-session-exercise"){collectSessionInputs();showAddExercise();}
+  if(action==="remove-session-exercise"){collectSessionInputs();activeSession.exercises.splice(Number(id),1);renderWorkout();}
   if(action==="finish-session") finishSession();
   if(action==="view-session") viewSession(id);
   if(action==="select-day"){selectedDay=id;renderHistory();}
@@ -201,7 +244,7 @@ function finishSession(){
 async function saveFinished(withEval=true){
   if(withEval){activeSession.exertion=document.querySelector("#session-rpe").value;activeSession.notes=document.querySelector("#session-notes").value;activeSession.important=document.querySelector("#session-important").checked;activeSession.duration=Number(document.querySelector("#session-duration").value||0);}
   activeSession.completed=true;activeSession.createdAt=new Date().toISOString();
-  sessions.push(activeSession);await persist("sessions",activeSession);activeSession=null;closeModal();toast("Träningspasset har sparats.");setPage("history");
+  if(!await persist("sessions",activeSession))return;sessions.push(activeSession);saveLocal();activeSession=null;closeModal();toast("Träningspasset har sparats.");setPage("history");
 }
 function viewSession(id){
   const s=sessions.find(x=>x.id===id);if(!s)return;
@@ -216,15 +259,15 @@ document.addEventListener("click",async e=>{
   if(a==="save-exercise"){
     const name=document.querySelector("#new-ex-name").value.trim();if(!name){toast("Skriv ett namn på övningen.");return;}
     const item={id:"local-"+uid(),name,category:document.querySelector("#new-ex-cat").value,registration:document.querySelector("#new-ex-reg").value,description:document.querySelector("#new-ex-desc").value};
-    exercises.push(item);await persist("exercises",item);closeModal();toast("Övningen har sparats.");render();return;
+    if(!await persist("exercises",item))return;exercises.push(item);saveLocal();closeModal();toast("Övningen har sparats.");render();return;
   }
   if(a==="save-plan"){
     const selected=[...document.querySelectorAll(".plan-ex-check:checked")].map(c=>exercises.find(x=>x.id===c.value)).filter(Boolean).map(e=>({exerciseId:e.id,name:e.name,registration:e.registration}));
     const title=document.querySelector("#plan-name").value.trim();if(!title){toast("Ge träningspasset ett namn.");return;}
-    const p={id:"local-"+uid(),title,type:document.querySelector("#plan-type").value,exercises:selected};plans.push(p);await persist("plans",p);closeModal();toast("Träningspasset har sparats.");setPage("planning");return;
+    const p={id:"local-"+uid(),title,type:document.querySelector("#plan-type").value,exercises:selected};if(!await persist("plans",p))return;plans.push(p);saveLocal();closeModal();toast("Träningspasset har sparats.");setPage("planning");return;
   }
   if(a==="choose-exercise"){
-    const ex=exercises.find(x=>x.id===id);if(ex){activeSession.exercises.push({name:ex.name,registration:ex.registration,category:ex.category});closeModal();renderWorkout();}return;
+    const ex=exercises.find(x=>x.id===id);if(ex){activeSession.exercises.push({exerciseId:ex.id,name:ex.name,registration:ex.registration,category:ex.category});closeModal();renderWorkout();}return;
   }
   if(a==="new-exercise-from-session"){closeModal();showExerciseForm();return;}
   if(a==="save-finished-session"){await saveFinished(true);return;}
@@ -232,9 +275,8 @@ document.addEventListener("click",async e=>{
   if(a==="close-modal"){closeModal();return;}
   if(a==="edit-session"){editSession(id);return;}
   if(a==="save-edit-session"){
-    const s=sessions.find(x=>x.id===id);if(s){s.exertion=document.querySelector("#edit-rpe").value;s.notes=document.querySelector("#edit-notes").value;s.important=document.querySelector("#edit-important").checked;await persist("sessions",s);closeModal();toast("Ändringarna har sparats.");renderHistory();}return;
+    const s=sessions.find(x=>x.id===id);if(s){s.exertion=document.querySelector("#edit-rpe").value;s.notes=document.querySelector("#edit-notes").value;s.important=document.querySelector("#edit-important").checked;if(!await persist("sessions",s))return;closeModal();toast("Ändringarna har sparats.");renderHistory();}return;
   }
 });
 loadLocal();
 await initCloud();
-render();
